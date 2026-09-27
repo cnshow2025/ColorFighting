@@ -1,0 +1,707 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>ColorFighting 三原色水滴</title>
+<meta name="theme-color" content="#0e1118">
+<meta name="description" content="用 RGB 三原色消除水滴的色彩學小遊戲">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="ColorFighting">
+<style>
+  :root {
+    --bg: #0e1118;
+    --panel: #171b26;
+    --text: #eef1f7;
+    --muted: #8a93a8;
+    --r: #ff2d2d;
+    --g: #1fcf3a;
+    --b: #2f6bff;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0; height: 100%; background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang TC", "Noto Sans TC", "Microsoft JhengHei", sans-serif;
+    overflow: hidden; overscroll-behavior: none;
+    -webkit-user-select: none; user-select: none; touch-action: manipulation;
+  }
+  #app {
+    display: flex; flex-direction: column; height: 100vh; height: 100dvh;
+    max-width: 520px; margin: 0 auto;
+    padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom);
+  }
+  #hud {
+    display: flex; align-items: center; gap: 8px; padding: 8px 12px;
+    font-size: 15px;
+  }
+  .stat { background: var(--panel); border-radius: 10px; padding: 6px 10px; line-height: 1.1; }
+  .stat small { display: block; color: var(--muted); font-size: 11px; }
+  .stat b { font-size: 18px; font-variant-numeric: tabular-nums; }
+  #hud .spacer { flex: 1; }
+  .icon-btn {
+    width: 40px; height: 40px; border-radius: 10px; border: none;
+    background: var(--panel); color: var(--text); font-size: 18px; cursor: pointer;
+  }
+  #stage { flex: 1; position: relative; min-height: 0; }
+  #cv { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+  #pad {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px;
+    padding: 10px 12px 14px;
+  }
+  .cbtn {
+    height: 76px; border-radius: 18px; border: none; cursor: pointer;
+    color: #fff; font-size: 26px; font-weight: 800; letter-spacing: 1px;
+    box-shadow: inset 0 -5px 0 rgba(0,0,0,.28);
+    transition: transform .06s, filter .06s;
+    touch-action: none;
+  }
+  .cbtn small { display: block; font-size: 13px; font-weight: 600; opacity: .9; }
+  .cbtn.r { background: var(--r); }
+  .cbtn.g { background: var(--g); }
+  .cbtn.b { background: var(--b); }
+  .cbtn.down { transform: translateY(3px) scale(.97); filter: brightness(1.25); box-shadow: inset 0 -2px 0 rgba(0,0,0,.28); }
+  #overlay {
+    position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    background: rgba(8,10,16,.82); padding: 20px;
+  }
+  #overlay.hidden { display: none; }
+  .card {
+    background: var(--panel); border-radius: 18px; padding: 22px 20px; width: 100%; max-width: 360px;
+    text-align: center;
+  }
+  .card h1 { margin: 0 0 4px; font-size: 26px; }
+  .card h1 .t-r { color: var(--r); } .card h1 .t-g { color: var(--g); } .card h1 .t-b { color: #5b8cff; }
+  .card p.sub { margin: 0 0 14px; color: var(--muted); font-size: 14px; }
+  .card ul { text-align: left; padding-left: 20px; margin: 0 0 18px; font-size: 14px; line-height: 1.7; }
+  .card .big { font-size: 40px; font-weight: 800; margin: 6px 0; }
+  .start {
+    width: 100%; height: 52px; border: none; border-radius: 14px; font-size: 18px; font-weight: 700;
+    color: #fff; cursor: pointer;
+    background: linear-gradient(90deg, var(--r), var(--g), var(--b));
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="hud">
+    <div class="stat"><small>分數</small><b id="score">0</b></div>
+    <div class="stat"><small>關卡</small><b id="level">1</b></div>
+    <div class="stat"><small>最高分</small><b id="best">0</b></div>
+    <div class="spacer"></div>
+    <button class="icon-btn" id="soundBtn" aria-label="音效">🔊</button>
+    <button class="icon-btn" id="pauseBtn" aria-label="暫停">⏸</button>
+  </div>
+  <div id="stage">
+    <canvas id="cv"></canvas>
+    <div id="overlay"><div class="card" id="card"></div></div>
+  </div>
+  <div id="pad">
+    <button class="cbtn r" data-c="r">R<small>紅</small></button>
+    <button class="cbtn g" data-c="g">G<small>綠</small></button>
+    <button class="cbtn b" data-c="b">B<small>藍</small></button>
+  </div>
+</div>
+
+<script>
+(() => {
+  'use strict';
+
+  // ---------- 設定 ----------
+  const CUP_CAPACITY = 10;        // 濾杯容量（滴）
+  const DROPS_PER_LEVEL = 10;     // 每關需要消除的水滴數
+  const WRONG_PENALTY = 5;        // 按錯扣分
+  const MAX_ACTIVE = 6;           // 畫面上同時最多幾滴
+
+  const COMP_RGB = { r: [255, 45, 45], g: [31, 207, 58], b: [47, 107, 255] };
+  const COMP_NAME = { r: '紅', g: '綠', b: '藍' };
+  const COLOR_NAME = {
+    '100': '紅', '010': '綠', '001': '藍',
+    '110': '黃', '101': '洋紅', '011': '青', '111': '白'
+  };
+  const SINGLES = ['100', '010', '001'];
+  const DOUBLES = ['110', '101', '011'];
+  const TRIPLES = ['111'];
+
+  function levelConfig(lv) {
+    const speed = Math.min(0.30, 0.085 + 0.012 * (lv - 1));   // 每秒落下畫面高度的比例
+    const interval = Math.max(0.75, 2.4 - 0.15 * (lv - 1));   // 生成間隔（秒）
+    let w;
+    if (lv <= 2) w = [1, 0, 0];
+    else if (lv === 3) w = [0.7, 0.3, 0];
+    else if (lv === 4) w = [0.4, 0.6, 0];
+    else if (lv === 5) w = [0.35, 0.5, 0.15];
+    else w = [0.25, 0.55, 0.2];
+    return { speed, interval, weights: w };
+  }
+
+  function levelIntro(lv) {
+    switch (lv) {
+      case 1: return ['第 1 關', '三原色：紅 R、綠 G、藍 B'];
+      case 2: return ['第 2 關', '速度加快！'];
+      case 3: return ['第 3 關', '混合色登場！黃＝紅＋綠　洋紅＝紅＋藍　青＝綠＋藍'];
+      case 4: return ['第 4 關', '混合色變多了'];
+      case 5: return ['第 5 關', '白＝紅＋綠＋藍'];
+      default: return ['第 ' + lv + ' 關', '速度再提升！'];
+    }
+  }
+
+  // ---------- 工具 ----------
+  const $ = id => document.getElementById(id);
+  const rand = (a, b) => a + Math.random() * (b - a);
+  const keyOf = c => (c.r ? '1' : '0') + (c.g ? '1' : '0') + (c.b ? '1' : '0');
+  const compsOf = c => ['r', 'g', 'b'].filter(k => c[k]);
+  function colorOf(c) {
+    return [c.r ? 255 : 0, c.g ? 255 : 0, c.b ? 255 : 0];
+  }
+  const rgbStr = (a, alpha = 1) => `rgba(${a[0]|0},${a[1]|0},${a[2]|0},${alpha})`;
+
+  function store(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+  function load(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+
+  // ---------- 音效 ----------
+  let audioCtx = null;
+  let soundOn = load('cf_sound') !== '0';
+  function ensureAudio() {
+    if (!audioCtx) {
+      try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {}
+    }
+    if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+  }
+  function tone(freq, dur = 0.12, type = 'sine', vol = 0.15, delay = 0) {
+    if (!soundOn || !audioCtx) return;
+    const t = audioCtx.currentTime + delay;
+    const o = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    o.type = type; o.frequency.setValueAtTime(freq, t);
+    g.gain.setValueAtTime(vol, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+    o.connect(g); g.connect(audioCtx.destination);
+    o.start(t); o.stop(t + dur + 0.02);
+  }
+  const SFX = {
+    comp: c => tone({ r: 523, g: 659, b: 784 }[c], 0.12, 'triangle'),
+    clear: () => { tone(784, 0.1, 'sine', 0.12); tone(1047, 0.18, 'sine', 0.12, 0.08); },
+    wrong: () => tone(140, 0.2, 'sawtooth', 0.1),
+    land: () => tone(220, 0.15, 'sine', 0.12),
+    level: () => { [523, 659, 784, 1047].forEach((f, i) => tone(f, 0.15, 'triangle', 0.12, i * 0.1)); },
+    over: () => { [392, 330, 262].forEach((f, i) => tone(f, 0.25, 'triangle', 0.13, i * 0.18)); }
+  };
+
+  // ---------- 畫布 ----------
+  const cv = $('cv');
+  const ctx = cv.getContext('2d');
+  let W = 0, H = 0, DPR = 1;
+  let dropR = 20;
+  let cup = { top: 0, mouthW: 0, bottomW: 0, h: 0, cx: 0 };
+
+  function resize() {
+    const rect = $('stage').getBoundingClientRect();
+    W = rect.width; H = rect.height;
+    DPR = Math.min(window.devicePixelRatio || 1, 3);
+    cv.width = Math.round(W * DPR); cv.height = Math.round(H * DPR);
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    dropR = Math.max(14, Math.min(26, Math.min(W, H) * 0.05));
+    cup.h = Math.max(70, H * 0.17);
+    cup.mouthW = W * 0.86;
+    cup.bottomW = W * 0.46;
+    cup.cx = W / 2;
+    cup.top = H - cup.h - 8;
+  }
+  window.addEventListener('resize', resize);
+
+  // ---------- 遊戲狀態 ----------
+  let state = 'title';       // title | playing | paused | over
+  let score = 0, level = 1, best = parseInt(load('cf_best') || '0', 10) || 0;
+  let clearedInLevel = 0, totalCleared = 0;
+  let drops = [];
+  let effects = [];          // 粒子、蒸氣、水花
+  let toasts = [];           // 飄字
+  let banner = null;         // 關卡標題
+  let spawnTimer = 0, spawnHold = 0;
+  let cupCount = 0, cupColor = [60, 70, 90];
+  let nextId = 1;
+
+  function pickColorKey() {
+    const w = levelConfig(level).weights;
+    const x = Math.random() * (w[0] + w[1] + w[2]);
+    let pool = x < w[0] ? SINGLES : x < w[0] + w[1] ? DOUBLES : TRIPLES;
+    return pool[(Math.random() * pool.length) | 0];
+  }
+
+  function spawnDrop() {
+    const key = pickColorKey();
+    const c = { r: key[0] === '1', g: key[1] === '1', b: key[2] === '1' };
+    const left = cup.cx - cup.mouthW / 2 + dropR * 1.6;
+    const right = cup.cx + cup.mouthW / 2 - dropR * 1.6;
+    let x = rand(left, right);
+    for (let i = 0; i < 8; i++) {
+      const clash = drops.some(d => d.y < H * 0.3 && Math.abs(d.xf * W - x) < dropR * 3);
+      if (!clash) break;
+      x = rand(left, right);
+    }
+    drops.push({ id: nextId++, xf: x / W, y: -dropR, c, origKey: key, shake: 0, wob: Math.random() * 6 });
+  }
+
+  function targetDrop() {
+    let t = null;
+    for (const d of drops) if (!t || d.y > t.y) t = d;
+    return t;
+  }
+
+  function updateHUD() {
+    $('score').textContent = score;
+    $('level').textContent = level;
+    $('best').textContent = best;
+  }
+
+  function addScore(n) {
+    score = Math.max(0, score + n);
+    if (score > best) { best = score; store('cf_best', String(best)); }
+    updateHUD();
+  }
+
+  function burst(x, y, rgb, n = 10, spd = 120) {
+    for (let i = 0; i < n; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const v = rand(spd * 0.4, spd);
+      effects.push({ kind: 'p', x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v - 40, life: 0.6, max: 0.6, rgb, r: rand(2, 4.5) });
+    }
+  }
+  function steam(x, y) {
+    for (let i = 0; i < 7; i++) {
+      effects.push({ kind: 's', x: x + rand(-dropR, dropR), y: y + rand(-dropR * 0.5, dropR * 0.5), vx: rand(-15, 15), vy: rand(-90, -50), life: 0.9, max: 0.9, r: rand(dropR * 0.3, dropR * 0.6) });
+    }
+  }
+  function toast(text, x, y, rgb = [255, 255, 255], size = 16) {
+    toasts.push({ text, x, y, rgb, size, life: 1.3, max: 1.3 });
+  }
+
+  // ---------- 操作 ----------
+  function press(ch) {
+    if (state !== 'playing') return;
+    const t = targetDrop();
+    if (!t) return;
+    const x = t.xf * W, y = t.y;
+    if (t.c[ch]) {
+      t.c[ch] = false;
+      SFX.comp(ch);
+      burst(x, y, COMP_RGB[ch], 12);
+      addScore(10 * level);
+      if (!t.c.r && !t.c.g && !t.c.b) {
+        drops = drops.filter(d => d !== t);
+        steam(x, y);
+        SFX.clear();
+        clearedInLevel++; totalCleared++;
+        const k = t.origKey;
+        const comps = [...k].map((v, i) => v === '1' ? ['紅', '綠', '藍'][i] : null).filter(Boolean);
+        if (comps.length >= 2) {
+          toast(COLOR_NAME[k] + ' ＝ ' + comps.join('＋'), x, y - dropR * 2, colorOf({ r: k[0] === '1', g: k[1] === '1', b: k[2] === '1' }), 17);
+        } else {
+          toast('+' + (10 * level), x, y - dropR * 2, COMP_RGB[ch]);
+        }
+        if (clearedInLevel >= DROPS_PER_LEVEL) levelUp();
+      }
+    } else {
+      t.shake = 0.35;
+      addScore(-WRONG_PENALTY);
+      SFX.wrong();
+      toast('沒有' + COMP_NAME[ch] + '！ -' + WRONG_PENALTY, x, y - dropR * 2, [255, 120, 120]);
+      if (navigator.vibrate) navigator.vibrate(60);
+    }
+  }
+
+  function levelUp() {
+    level++;
+    clearedInLevel = 0;
+    updateHUD();
+    showBanner();
+    SFX.level();
+  }
+
+  function showBanner() {
+    const [title, sub] = levelIntro(level);
+    banner = { title, sub, life: 2.6, max: 2.6 };
+    spawnHold = 1.6;
+  }
+
+  function landDrop(d) {
+    drops = drops.filter(x => x !== d);
+    const rgb = colorOf(d.c);
+    cupCount++;
+    // 濾杯水色 = 所有落入水滴的平均色
+    cupColor = cupCount === 1 ? rgb : cupColor.map((v, i) => (v * (cupCount - 1) + rgb[i]) / cupCount);
+    burst(d.xf * W, cup.top, rgb, 8, 90);
+    SFX.land();
+    if (navigator.vibrate) navigator.vibrate(30);
+    if (cupCount >= CUP_CAPACITY) gameOver();
+  }
+
+  // ---------- 流程 ----------
+  function startGame() {
+    ensureAudio();
+    score = 0; level = 1; clearedInLevel = 0; totalCleared = 0;
+    drops = []; effects = []; toasts = [];
+    cupCount = 0; cupColor = [60, 70, 90];
+    spawnTimer = 0.6;
+    state = 'playing';
+    updateHUD();
+    hideOverlay();
+    showBanner();
+    $('pauseBtn').textContent = '⏸';
+  }
+
+  function gameOver() {
+    state = 'over';
+    SFX.over();
+    showOverlay(`
+      <h1>濾杯滿了！</h1>
+      <p class="sub">遊戲結束</p>
+      <div class="big">${score}</div>
+      <p class="sub">第 ${level} 關　消除 ${totalCleared} 滴　最高分 ${best}</p>
+      <button class="start" id="startBtn">再玩一次</button>`);
+  }
+
+  function pause() {
+    if (state === 'playing') {
+      state = 'paused';
+      $('pauseBtn').textContent = '▶';
+      showOverlay(`
+        <h1>暫停</h1>
+        <p class="sub">第 ${level} 關　分數 ${score}</p>
+        <button class="start" id="startBtn" data-act="resume">繼續</button>`);
+    } else if (state === 'paused') {
+      resume();
+    }
+  }
+  function resume() {
+    state = 'playing';
+    $('pauseBtn').textContent = '⏸';
+    hideOverlay();
+    last = performance.now();
+  }
+
+  function titleScreen() {
+    state = 'title';
+    showOverlay(`
+      <h1><span class="t-r">Color</span><span class="t-g">Fight</span><span class="t-b">ing</span></h1>
+      <p class="sub">三原色水滴大作戰</p>
+      <ul>
+        <li>水滴由 <b>紅 R、綠 G、藍 B</b> 組成</li>
+        <li>按下水滴含有的原色，就把那個顏色扣掉<br>（例：黃色按 R → 剩下綠色）</li>
+        <li>顏色全部扣完，水滴蒸發得分</li>
+        <li>按鍵作用在<b>最下面</b>（白框標示）的水滴</li>
+        <li>按錯扣 ${WRONG_PENALTY} 分；濾杯接滿 ${CUP_CAPACITY} 滴遊戲結束</li>
+      </ul>
+      <button class="start" id="startBtn">開始遊戲</button>`);
+  }
+
+  function showOverlay(html) {
+    $('card').innerHTML = html;
+    $('overlay').classList.remove('hidden');
+    const b = $('startBtn');
+    if (b) b.addEventListener('click', () => b.dataset.act === 'resume' ? resume() : startGame());
+  }
+  function hideOverlay() { $('overlay').classList.add('hidden'); }
+
+  // ---------- 更新 ----------
+  function update(dt) {
+    if (state !== 'playing') return;
+    const cfg = levelConfig(level);
+
+    if (spawnHold > 0) spawnHold -= dt;
+    else {
+      spawnTimer -= dt;
+      if (spawnTimer <= 0) {
+        if (drops.length < MAX_ACTIVE) spawnDrop();
+        spawnTimer = cfg.interval * rand(0.8, 1.2);
+      }
+    }
+
+    const vy = cfg.speed * H;
+    for (const d of drops.slice()) {
+      d.y += vy * dt;
+      d.wob += dt * 5;
+      if (d.shake > 0) d.shake -= dt;
+      if (d.y + dropR >= cup.top + cup.h * 0.15) landDrop(d);
+      if (state !== 'playing') return;
+    }
+  }
+
+  function updateFx(dt) {
+    for (const e of effects) {
+      e.life -= dt;
+      e.x += e.vx * dt; e.y += e.vy * dt;
+      if (e.kind === 'p') e.vy += 300 * dt;
+    }
+    effects = effects.filter(e => e.life > 0);
+    for (const t of toasts) { t.life -= dt; t.y -= 35 * dt; }
+    toasts = toasts.filter(t => t.life > 0);
+    if (banner) { banner.life -= dt; if (banner.life <= 0) banner = null; }
+  }
+
+  // ---------- 繪圖 ----------
+  function dropPath(x, y, r) {
+    ctx.beginPath();
+    ctx.moveTo(x, y - r * 2.1);
+    ctx.bezierCurveTo(x + r * 0.3, y - r * 1.3, x + r, y - r * 0.6, x + r, y);
+    ctx.arc(x, y, r, 0, Math.PI, false);
+    ctx.bezierCurveTo(x - r, y - r * 0.6, x - r * 0.3, y - r * 1.3, x, y - r * 2.1);
+    ctx.closePath();
+  }
+
+  function drawDrop(d, isTarget) {
+    let x = d.xf * W + Math.sin(d.wob) * 1.2;
+    const y = d.y;
+    if (d.shake > 0) x += Math.sin(d.shake * 60) * 5;
+    const r = dropR;
+    const rgb = colorOf(d.c);
+
+    ctx.save();
+    ctx.shadowColor = rgbStr(rgb, 0.8);
+    ctx.shadowBlur = r * 0.9;
+    dropPath(x, y, r);
+    const grad = ctx.createRadialGradient(x - r * 0.35, y - r * 0.35, r * 0.1, x, y, r * 1.3);
+    grad.addColorStop(0, rgbStr(rgb.map(v => v + (255 - v) * 0.55)));
+    grad.addColorStop(0.5, rgbStr(rgb));
+    grad.addColorStop(1, rgbStr(rgb.map(v => v * 0.7)));
+    ctx.fillStyle = grad;
+    ctx.fill();
+    ctx.restore();
+
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = 'rgba(255,255,255,.55)';
+    dropPath(x, y, r);
+    ctx.stroke();
+
+    // 高光
+    ctx.beginPath();
+    ctx.ellipse(x - r * 0.38, y - r * 0.2, r * 0.16, r * 0.3, -0.4, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255,255,255,.7)';
+    ctx.fill();
+
+    if (isTarget) {
+      const pad = 7;
+      ctx.lineWidth = 2.5;
+      ctx.strokeStyle = 'rgba(255,255,255,.95)';
+      ctx.setLineDash([6, 5]);
+      ctx.lineDashOffset = -performance.now() / 40;
+      ctx.beginPath();
+      ctx.roundRect ? ctx.roundRect(x - r - pad, y - r * 2.1 - pad, (r + pad) * 2, r * 3.1 + pad * 2, 10)
+                    : ctx.rect(x - r - pad, y - r * 2.1 - pad, (r + pad) * 2, r * 3.1 + pad * 2);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+  }
+
+  function drawCup() {
+    const { top, h, mouthW, bottomW, cx } = cup;
+    const bottom = top + h;
+    const lx0 = cx - mouthW / 2, rx0 = cx + mouthW / 2;
+    const lx1 = cx - bottomW / 2, rx1 = cx + bottomW / 2;
+
+    // 水位
+    if (cupCount > 0) {
+      const frac = cupCount / CUP_CAPACITY;
+      const wy = bottom - h * frac;
+      const k = (wy - top) / h;                // 0=口 1=底
+      const half = (mouthW + (bottomW - mouthW) * k) / 2;
+      ctx.beginPath();
+      ctx.moveTo(cx - half, wy);
+      const t = performance.now() / 500;
+      for (let i = 0; i <= 20; i++) {
+        const xx = cx - half + (half * 2) * i / 20;
+        ctx.lineTo(xx, wy + Math.sin(t + i * 0.8) * 2);
+      }
+      ctx.lineTo(rx1, bottom); ctx.lineTo(lx1, bottom); ctx.closePath();
+      ctx.fillStyle = rgbStr(cupColor, 0.85);
+      ctx.fill();
+    }
+
+    // 杯身
+    ctx.beginPath();
+    ctx.moveTo(lx0, top); ctx.lineTo(lx1, bottom); ctx.lineTo(rx1, bottom); ctx.lineTo(rx0, top);
+    ctx.lineWidth = 4;
+    ctx.strokeStyle = 'rgba(220,228,245,.85)';
+    ctx.lineJoin = 'round';
+    ctx.stroke();
+    // 杯口
+    ctx.beginPath();
+    ctx.moveTo(lx0 - 8, top); ctx.lineTo(lx0 + 6, top);
+    ctx.moveTo(rx0 - 6, top); ctx.lineTo(rx0 + 8, top);
+    ctx.stroke();
+
+    // 刻度
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = 'rgba(220,228,245,.25)';
+    for (let i = 1; i < CUP_CAPACITY; i++) {
+      const yy = bottom - h * i / CUP_CAPACITY;
+      const k = (yy - top) / h;
+      const half = (mouthW + (bottomW - mouthW) * k) / 2;
+      ctx.beginPath(); ctx.moveTo(cx + half - 14, yy); ctx.lineTo(cx + half - 4, yy); ctx.stroke();
+    }
+
+    // 數量
+    ctx.fillStyle = cupCount >= CUP_CAPACITY - 2 ? '#ff6b6b' : 'rgba(238,241,247,.9)';
+    ctx.font = 'bold 15px sans-serif';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(`濾杯 ${cupCount} / ${CUP_CAPACITY}`, cx, bottom - h * 0.35);
+  }
+
+  function drawFx() {
+    for (const e of effects) {
+      const a = Math.max(0, e.life / e.max);
+      ctx.beginPath();
+      if (e.kind === 'p') {
+        ctx.fillStyle = rgbStr(e.rgb, a);
+        ctx.arc(e.x, e.y, e.r, 0, Math.PI * 2);
+      } else {
+        ctx.fillStyle = `rgba(230,236,255,${a * 0.45})`;
+        ctx.arc(e.x, e.y, e.r * (1.6 - a * 0.6), 0, Math.PI * 2);
+      }
+      ctx.fill();
+    }
+    for (const t of toasts) {
+      const a = Math.min(1, t.life / t.max * 2);
+      ctx.font = `bold ${t.size}px sans-serif`;
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.lineWidth = 4; ctx.strokeStyle = `rgba(0,0,0,${a * 0.7})`;
+      let tx = Math.max(60, Math.min(W - 60, t.x));
+      ctx.strokeText(t.text, tx, t.y);
+      ctx.fillStyle = rgbStr(t.rgb.map(v => Math.max(v, 90)), a);
+      ctx.fillText(t.text, tx, t.y);
+    }
+  }
+
+  function drawBanner() {
+    if (!banner) return;
+    const a = Math.min(1, banner.life / 0.4, (banner.max - banner.life) / 0.3);
+    ctx.save();
+    ctx.globalAlpha = Math.max(0, a);
+    ctx.fillStyle = 'rgba(15,18,28,.85)';
+    const bh = 86, by = H * 0.3 - bh / 2;
+    ctx.fillRect(0, by, W, bh);
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 28px sans-serif';
+    ctx.fillText(banner.title, W / 2, by + 30);
+    ctx.fillStyle = '#c9d2e6';
+    ctx.font = '15px sans-serif';
+    wrapText(banner.sub, W / 2, by + 62, W - 30, 18);
+    ctx.restore();
+  }
+
+  function wrapText(text, x, y, maxW, lh) {
+    if (ctx.measureText(text).width <= maxW) { ctx.fillText(text, x, y); return; }
+    const parts = text.split('　');
+    const lines = [];
+    let cur = '';
+    for (const p of parts) {
+      const test = cur ? cur + '　' + p : p;
+      if (ctx.measureText(test).width > maxW && cur) { lines.push(cur); cur = p; }
+      else cur = test;
+    }
+    lines.push(cur);
+    lines.forEach((l, i) => ctx.fillText(l, x, y + (i - (lines.length - 1) / 2) * lh));
+  }
+
+  function draw() {
+    ctx.clearRect(0, 0, W, H);
+    // 背景
+    const bg = ctx.createLinearGradient(0, 0, 0, H);
+    bg.addColorStop(0, '#141a29'); bg.addColorStop(1, '#0e1118');
+    ctx.fillStyle = bg;
+    ctx.fillRect(0, 0, W, H);
+
+    // 關卡進度
+    if (state !== 'title') {
+      ctx.fillStyle = 'rgba(255,255,255,.08)';
+      ctx.fillRect(12, 6, W - 24, 5);
+      const g = ctx.createLinearGradient(12, 0, W - 12, 0);
+      g.addColorStop(0, '#ff2d2d'); g.addColorStop(0.5, '#1fcf3a'); g.addColorStop(1, '#2f6bff');
+      ctx.fillStyle = g;
+      ctx.fillRect(12, 6, (W - 24) * Math.min(1, clearedInLevel / DROPS_PER_LEVEL), 5);
+    }
+
+    drawCup();
+    const t = targetDrop();
+    for (const d of drops) drawDrop(d, d === t && state === 'playing');
+    drawFx();
+    drawBanner();
+  }
+
+  // ---------- 主迴圈 ----------
+  let last = performance.now();
+  function loop(now) {
+    const dt = Math.min(0.05, (now - last) / 1000);
+    last = now;
+    update(dt);
+    if (state !== 'paused') updateFx(dt);
+    draw();
+    requestAnimationFrame(loop);
+  }
+
+  // ---------- 輸入 ----------
+  document.querySelectorAll('.cbtn').forEach(btn => {
+    btn.addEventListener('pointerdown', e => {
+      e.preventDefault();
+      ensureAudio();
+      btn.classList.add('down');
+      press(btn.dataset.c);
+    });
+    const up = () => btn.classList.remove('down');
+    btn.addEventListener('pointerup', up);
+    btn.addEventListener('pointerleave', up);
+    btn.addEventListener('pointercancel', up);
+  });
+
+  window.addEventListener('keydown', e => {
+    const k = e.key.toLowerCase();
+    if (k === 'r' || k === 'g' || k === 'b') {
+      const btn = document.querySelector('.cbtn.' + k);
+      btn.classList.add('down');
+      setTimeout(() => btn.classList.remove('down'), 90);
+      ensureAudio();
+      press(k);
+    } else if (k === ' ' || k === 'p' || k === 'escape') {
+      if (state === 'playing' || state === 'paused') pause();
+      else if (k === ' ') startGame();
+      e.preventDefault();
+    }
+  });
+
+  $('pauseBtn').addEventListener('click', () => {
+    if (state === 'playing' || state === 'paused') pause();
+  });
+  $('soundBtn').addEventListener('click', () => {
+    soundOn = !soundOn;
+    store('cf_sound', soundOn ? '1' : '0');
+    $('soundBtn').textContent = soundOn ? '🔊' : '🔇';
+    ensureAudio();
+  });
+  $('soundBtn').textContent = soundOn ? '🔊' : '🔇';
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden && state === 'playing') pause();
+  });
+
+  // 防止 iOS 雙擊縮放
+  document.addEventListener('dblclick', e => e.preventDefault(), { passive: false });
+
+  // ---------- 啟動 ----------
+  resize();
+  updateHUD();
+  titleScreen();
+  requestAnimationFrame(loop);
+
+  if ('serviceWorker' in navigator && location.protocol !== 'file:') {
+    window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+  }
+})();
+</script>
+</body>
+</html>
