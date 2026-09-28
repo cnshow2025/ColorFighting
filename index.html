@@ -96,6 +96,10 @@
     font-size: 18px; font-weight: 800; cursor: pointer; line-height: 1.05;
   }
   .lvbtn small { display: block; font-size: 10px; font-weight: 500; color: var(--muted); }
+  .resetbtn {
+    margin-top: 16px; border: none; background: none; color: var(--muted);
+    font-size: 13px; text-decoration: underline; cursor: pointer; padding: 6px 10px;
+  }
 </style>
 </head>
 <body>
@@ -426,7 +430,17 @@
         <li>按鍵作用在<b>最下面</b>（白框標示）的水滴</li>
         <li>按錯扣 ${WRONG_PENALTY} 分；濾杯接滿 ${CUP_CAPACITY} 滴遊戲結束</li>
       </ul>
-      ${startButtonsHTML()}`);
+      ${startButtonsHTML()}
+      <button class="resetbtn" data-act="reset">清除紀錄</button>`);
+  }
+
+  function resetProgress() {
+    if (!confirm('確定要清除最高分和所有關卡進度嗎？此動作無法復原。')) return;
+    ['cf_best', 'cf_maxLevel', 'cf_entryScores'].forEach(k => { try { localStorage.removeItem(k); } catch (e) {} });
+    best = 0; maxLevel = 1; entryScores = {};
+    score = 0; level = 1;
+    updateHUD();
+    titleScreen();
   }
 
   function startButtonsHTML() {
@@ -450,6 +464,7 @@
       if (act === 'resume') resume();
       else if (act === 'menu') goHome();
       else if (act === 'end') gameOver(true);
+      else if (act === 'reset') resetProgress();
       else startGame(parseInt(b.dataset.lv, 10) || 1);
     }));
   }
