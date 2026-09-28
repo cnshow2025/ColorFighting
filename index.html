@@ -70,6 +70,8 @@
   .cbtn.cmy { display: none; }
   #pad.comp .cbtn.cmy { display: block; }
   #pad.comp .cbtn { height: 60px; font-size: 22px; }
+  #pad.comp .cbtn.flip { animation: flip .15s ease-out; }
+  @keyframes flip { from { transform: scaleX(0.2); opacity: .4; } to { transform: scaleX(1); opacity: 1; } }
   .cbtn.down { transform: translateY(3px) scale(.97); filter: brightness(1.25); box-shadow: inset 0 -2px 0 rgba(0,0,0,.28); }
   #overlay {
     position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
@@ -406,7 +408,7 @@
   // 互補色模式：按一次水滴的互補色就消除（互補色相加＝白光）
   function pressComplement(ch) {
     const t = targetDrop();
-    if (!t) return;
+    if (!t) { shufflePad(); return; }
     const x = t.xf * W, y = t.y;
     const dropKey = keyOf(t.c);
     const btnKey = BTN_KEY[ch];
@@ -428,6 +430,7 @@
       toast(COLOR_NAME[btnKey] + '不是' + COLOR_NAME[dropKey] + '的互補色 -' + WRONG_PENALTY, x, y - dropR * 2, [255, 120, 120]);
       if (navigator.vibrate) navigator.vibrate(60);
     }
+    shufflePad();   // 每按一次（不論對錯）就換位置
   }
 
   // 依關卡切換按鈕（三原色 3 顆／互補色 6 顆）
@@ -438,6 +441,30 @@
       pad.classList.toggle('comp', comp);
       resize();
     }
+    if (comp) shufflePad();
+    else document.querySelectorAll('.cbtn').forEach(b => { b.style.order = ''; });
+  }
+
+  // 互補色模式：隨機排列 6 顆按鈕（保證和上一次不同）
+  let lastOrder = '';
+  function shufflePad() {
+    const btns = [...document.querySelectorAll('.cbtn')];
+    let idx, sig;
+    do {
+      idx = btns.map((_, i) => i);
+      for (let i = idx.length - 1; i > 0; i--) {
+        const j = (Math.random() * (i + 1)) | 0;
+        [idx[i], idx[j]] = [idx[j], idx[i]];
+      }
+      sig = idx.join(',');
+    } while (sig === lastOrder);
+    lastOrder = sig;
+    btns.forEach((b, i) => {
+      b.style.order = idx[i];
+      b.classList.remove('flip');
+      void b.offsetWidth;          // 重新觸發動畫
+      b.classList.add('flip');
+    });
   }
 
   function levelUp() {
