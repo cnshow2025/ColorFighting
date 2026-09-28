@@ -102,6 +102,14 @@
     font-size: 18px; font-weight: 800; cursor: pointer; line-height: 1.05;
   }
   .lvbtn small { display: block; font-size: 10px; font-weight: 500; color: var(--muted); }
+  .lvbtn.new { background: #1d2230; color: #6f788d; }
+  .lvbtn.played { background: #1d2230; box-shadow: inset 0 0 0 2px #8fa0c4; }
+  .lvbtn.cleared { background: #1c7a3c; color: #fff; }
+  .lvbtn.cleared small { color: #c8f0d4; }
+  .card p.grouptitle { margin: 12px 0 6px; font-size: 12px; text-align: left; }
+  .lg { display: inline-block; width: 11px; height: 11px; border-radius: 3px; vertical-align: -1px; margin-right: 3px; }
+  .lg.cleared { background: #1c7a3c; }
+  .lg.played { box-shadow: inset 0 0 0 2px #8fa0c4; }
   .resetbtn {
     margin-top: 16px; border: none; background: none; color: var(--muted);
     font-size: 13px; text-decoration: underline; cursor: pointer; padding: 6px 10px;
@@ -213,10 +221,26 @@
   function load(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
 
   // ---------- 關卡進度（接續用） ----------
-  // cf_maxLevel：玩到過的最高關卡；cf_entryScores：進入各關時的分數（取最高）
+  // cf_maxLevel：玩到過的最高關卡；cf_entryScores：進入各關時的分數（取最高，有紀錄＝玩過）
+  // cf_cleared：各自通過的關卡
+  const MENU_LEVELS = 20;         // 主畫面固定列出的關卡數
   let maxLevel = Math.max(1, parseInt(load('cf_maxLevel') || '1', 10) || 1);
   let entryScores = {};
   try { entryScores = JSON.parse(load('cf_entryScores') || '{}') || {}; } catch (e) { entryScores = {}; }
+  let cleared = new Set();
+  const savedCleared = load('cf_cleared');
+  if (savedCleared) {
+    try { cleared = new Set(JSON.parse(savedCleared)); } catch (e) {}
+  } else if (maxLevel > 1) {
+    // 舊紀錄轉換：最高關卡以前的都算通過
+    for (let lv = 1; lv < maxLevel; lv++) cleared.add(lv);
+    store('cf_cleared', JSON.stringify([...cleared]));
+    if (!(maxLevel in entryScores)) { entryScores[maxLevel] = 0; store('cf_entryScores', JSON.stringify(entryScores)); }
+  }
+  const isPlayed = lv => (lv in entryScores) || cleared.has(lv);
+  function markCleared(lv) {
+    if (!cleared.has(lv)) { cleared.add(lv); store('cf_cleared', JSON.stringify([...cleared])); }
+  }
   function entryScoreOf(lv) { return lv <= 1 ? 0 : (entryScores[lv] || 0); }
   function recordLevelEntry(lv, sc) {
     if (lv > maxLevel) { maxLevel = lv; store('cf_maxLevel', String(maxLevel)); }
@@ -417,6 +441,7 @@
   }
 
   function levelUp() {
+    markCleared(level);
     level++;
     clearedInLevel = 0;
     recordLevelEntry(level, score);
@@ -452,8 +477,9 @@
   // ---------- 流程 ----------
   function startGame(startLevel = 1) {
     ensureAudio();
-    level = Math.max(1, Math.min(startLevel, maxLevel));
+    level = Math.max(1, startLevel);
     score = entryScoreOf(level); clearedInLevel = 0; totalCleared = 0;
+    recordLevelEntry(level, score);   // 標記為玩過
     applyMode();
     drops = []; effects = []; toasts = [];
     cupCount = 0; cupColor = [60, 70, 90];
@@ -518,24 +544,39 @@
 
   function resetProgress() {
     if (!confirm('確定要清除最高分和所有關卡進度嗎？此動作無法復原。')) return;
-    ['cf_best', 'cf_maxLevel', 'cf_entryScores'].forEach(k => { try { localStorage.removeItem(k); } catch (e) {} });
-    best = 0; maxLevel = 1; entryScores = {};
+    ['cf_best', 'cf_maxLevel', 'cf_entryScores', 'cf_cleared'].forEach(k => { try { localStorage.removeItem(k); } catch (e) {} });
+    best = 0; maxLevel = 1; entryScores = {}; cleared = new Set();
     score = 0; level = 1;
     updateHUD();
     titleScreen();
   }
 
-  function startButtonsHTML() {
-    if (maxLevel <= 1) return `<button class="start" data-act="start" data-lv="1">開始遊戲</button>`;
-    let grid = '';
-    for (let lv = 1; lv <= maxLevel; lv++) {
-      grid += `<button class="lvbtn" data-act="start" data-lv="${lv}">${lv}<small>${entryScoreOf(lv)}</small></button>`;
+  function levelGridHTML(from, to) {
+    let html = '';
+    for (let lv = from; lv <= to; lv++) {
+      const cls = cleared.has(lv) ? 'cleared' : isPlayed(lv) ? 'played' : 'new';
+      const sub = isPlayed(lv) ? entryScoreOf(lv) : '&nbsp;';
+      html += `<button class="lvbtn ${cls}" data-act="start" data-lv="${lv}">${lv}<small>${sub}</small></button>`;
     }
+    return `<div class="lvgrid">${html}</div>`;
+  }
+
+  function startButtonsHTML() {
+    const top = maxLevel > 1 || cleared.size > 0
+      ? `<button class="start" data-act="start" data-lv="${maxLevel}">從第 ${maxLevel} 關繼續</button>
+         <button class="start2" data-act="start" data-lv="1">從第 1 關開始</button>`
+      : `<button class="start" data-act="start" data-lv="1">開始遊戲</button>`;
+    const extra = maxLevel > MENU_LEVELS
+      ? `<p class="sub lvtitle">挑戰 ${MENU_LEVELS + 1} 關以上</p>${levelGridHTML(MENU_LEVELS + 1, maxLevel)}`
+      : '';
     return `
-      <button class="start" data-act="start" data-lv="${maxLevel}">從第 ${maxLevel} 關繼續</button>
-      <button class="start2" data-act="start" data-lv="1">從第 1 關開始</button>
-      <p class="sub lvtitle">選擇關卡（下方數字為起始分數）</p>
-      <div class="lvgrid">${grid}</div>`;
+      ${top}
+      <p class="sub lvtitle">選擇關卡　<span class="lg cleared"></span>已通過　<span class="lg played"></span>玩過　數字為起始分數</p>
+      <p class="sub grouptitle">三原色 1～10</p>
+      ${levelGridHTML(1, 10)}
+      <p class="sub grouptitle">互補色 11～${MENU_LEVELS}</p>
+      ${levelGridHTML(11, MENU_LEVELS)}
+      ${extra}`;
   }
 
   function showOverlay(html) {
