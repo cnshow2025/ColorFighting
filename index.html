@@ -64,6 +64,12 @@
   .cbtn.r { background: var(--r); }
   .cbtn.g { background: var(--g); }
   .cbtn.b { background: var(--b); }
+  .cbtn.c { background: #16c8d0; color: #0b1a1c; }
+  .cbtn.m { background: #e03ce0; }
+  .cbtn.y { background: #f2d024; color: #2a2200; }
+  .cbtn.cmy { display: none; }
+  #pad.comp .cbtn.cmy { display: block; }
+  #pad.comp .cbtn { height: 60px; font-size: 22px; }
   .cbtn.down { transform: translateY(3px) scale(.97); filter: brightness(1.25); box-shadow: inset 0 -2px 0 rgba(0,0,0,.28); }
   #overlay {
     position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
@@ -120,6 +126,9 @@
     <button class="cbtn r" data-c="r">R<small>紅</small></button>
     <button class="cbtn g" data-c="g">G<small>綠</small></button>
     <button class="cbtn b" data-c="b">B<small>藍</small></button>
+    <button class="cbtn c cmy" data-c="c">C<small>青</small></button>
+    <button class="cbtn m cmy" data-c="m">M<small>洋紅</small></button>
+    <button class="cbtn y cmy" data-c="y">Y<small>黃</small></button>
   </div>
 </div>
 
@@ -143,7 +152,27 @@
   const DOUBLES = ['110', '101', '011'];
   const TRIPLES = ['111'];
 
+  // 第 11 關起為互補色模式
+  const COMP_MODE_LEVEL = 11;
+  const isCompMode = lv => lv >= COMP_MODE_LEVEL;
+  const BTN_KEY = { r: '100', g: '010', b: '001', c: '011', m: '101', y: '110' };
+  const invertKey = k => [...k].map(v => v === '1' ? '0' : '1').join('');
+
   function levelConfig(lv) {
+    if (isCompMode(lv)) {
+      // 第 11 關約等於第 3 關的速度，逐關加快，第 20 關約等於第 10 關；之後繼續加快
+      const base = levelConfig(3), top = levelConfig(10);
+      const t = (lv - COMP_MODE_LEVEL) / 9;
+      let speed = base.speed + (top.speed - base.speed) * t;
+      let interval = base.interval + (top.interval - base.interval) * t;
+      speed = Math.min(0.30, speed);
+      interval = Math.max(0.75, interval);
+      let pool;
+      if (lv <= 12) pool = SINGLES;
+      else if (lv <= 14) pool = DOUBLES;
+      else pool = SINGLES.concat(DOUBLES);
+      return { speed, interval, pool };
+    }
     let speed = Math.min(0.30, 0.085 + 0.012 * (lv - 1));     // 每秒落下畫面高度的比例
     if (lv <= 2) speed *= 1.2;                                 // 單色關卡加快 20%
     const interval = Math.max(0.75, 2.4 - 0.15 * (lv - 1));   // 生成間隔（秒）
@@ -163,6 +192,9 @@
       case 3: return ['第 3 關', '混合色登場！黃＝紅＋綠　洋紅＝紅＋藍　青＝綠＋藍'];
       case 4: return ['第 4 關', '混合色變多了'];
       case 5: return ['第 5 關', '白＝紅＋綠＋藍'];
+      case 11: return ['第 11 關', '互補色登場！按下水滴的互補色　紅↔青　綠↔洋紅　藍↔黃'];
+      case 13: return ['第 13 關', '換青、洋紅、黃掉下來了　找出它們的互補色'];
+      case 15: return ['第 15 關', '六色混合！'];
       default: return ['第 ' + lv + ' 關', '速度再提升！'];
     }
   }
@@ -255,7 +287,9 @@
   let nextId = 1;
 
   function pickColorKey() {
-    const w = levelConfig(level).weights;
+    const cfg = levelConfig(level);
+    if (cfg.pool) return cfg.pool[(Math.random() * cfg.pool.length) | 0];
+    const w = cfg.weights;
     const x = Math.random() * (w[0] + w[1] + w[2]);
     let pool = x < w[0] ? SINGLES : x < w[0] + w[1] ? DOUBLES : TRIPLES;
     return pool[(Math.random() * pool.length) | 0];
@@ -312,6 +346,8 @@
   // ---------- 操作 ----------
   function press(ch) {
     if (state !== 'playing') return;
+    if (isCompMode(level)) { pressComplement(ch); return; }
+    if (!(ch in COMP_RGB)) return;   // 三原色模式只用 R G B
     const t = targetDrop();
     if (!t) return;
     const x = t.xf * W, y = t.y;
@@ -343,10 +379,53 @@
     }
   }
 
+  // 互補色模式：按一次水滴的互補色就消除（互補色相加＝白光）
+  function pressComplement(ch) {
+    const t = targetDrop();
+    if (!t) return;
+    const x = t.xf * W, y = t.y;
+    const dropKey = keyOf(t.c);
+    const btnKey = BTN_KEY[ch];
+    const btnRgb = colorOf({ r: btnKey[0] === '1', g: btnKey[1] === '1', b: btnKey[2] === '1' });
+    if (btnKey === invertKey(dropKey)) {
+      drops = drops.filter(d => d !== t);
+      burst(x, y, btnRgb, 12);
+      burst(x, y, [255, 255, 255], 10);
+      steam(x, y);
+      SFX.clear();
+      addScore(20 * level);
+      clearedInLevel++; totalCleared++;
+      toast(COLOR_NAME[dropKey] + ' ＋ ' + COLOR_NAME[btnKey] + ' ＝ 白', x, y - dropR * 2, [255, 255, 255], 17);
+      if (clearedInLevel >= DROPS_PER_LEVEL) levelUp();
+    } else {
+      t.shake = 0.35;
+      addScore(-WRONG_PENALTY);
+      SFX.wrong();
+      toast(COLOR_NAME[btnKey] + '不是' + COLOR_NAME[dropKey] + '的互補色 -' + WRONG_PENALTY, x, y - dropR * 2, [255, 120, 120]);
+      if (navigator.vibrate) navigator.vibrate(60);
+    }
+  }
+
+  // 依關卡切換按鈕（三原色 3 顆／互補色 6 顆）
+  function applyMode() {
+    const comp = isCompMode(level);
+    const pad = $('pad');
+    if (pad.classList.contains('comp') !== comp) {
+      pad.classList.toggle('comp', comp);
+      resize();
+    }
+  }
+
   function levelUp() {
     level++;
     clearedInLevel = 0;
     recordLevelEntry(level, score);
+    if (level === COMP_MODE_LEVEL) {
+      // 進入互補色模式：畫面上剩下的三原色水滴直接蒸發
+      for (const d of drops) steam(d.xf * W, d.y);
+      drops = [];
+    }
+    applyMode();
     updateHUD();
     showBanner();
     SFX.level();
@@ -375,6 +454,7 @@
     ensureAudio();
     level = Math.max(1, Math.min(startLevel, maxLevel));
     score = entryScoreOf(level); clearedInLevel = 0; totalCleared = 0;
+    applyMode();
     drops = []; effects = []; toasts = [];
     cupCount = 0; cupColor = [60, 70, 90];
     spawnTimer = 0.6;
@@ -430,6 +510,7 @@
         <li>顏色全部扣完，水滴蒸發得分</li>
         <li>按鍵作用在<b>最下面</b>（白框標示）的水滴</li>
         <li>按錯扣 ${WRONG_PENALTY} 分；濾杯接滿 ${CUP_CAPACITY} 滴遊戲結束</li>
+        <li>第 ${COMP_MODE_LEVEL} 關起：按水滴的<b>互補色</b>一次就消除<br>（紅↔青、綠↔洋紅、藍↔黃）</li>
       </ul>
       ${startButtonsHTML()}
       <button class="resetbtn" data-act="reset">清除紀錄</button>`);
@@ -731,7 +812,8 @@
 
   window.addEventListener('keydown', e => {
     const k = e.key.toLowerCase();
-    if (k === 'r' || k === 'g' || k === 'b') {
+    if (k in BTN_KEY) {
+      if (!isCompMode(level) && !(k in COMP_RGB)) return;
       const btn = document.querySelector('.cbtn.' + k);
       btn.classList.add('down');
       setTimeout(() => btn.classList.remove('down'), 90);

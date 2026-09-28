@@ -1,6 +1,6 @@
 // ColorFighting service worker — 讓遊戲可以安裝並離線遊玩
 // 更新遊戲檔案時，請把版本號加一
-const CACHE = 'colorfighting-v5';
+const CACHE = 'colorfighting-v6';
 const ASSETS = [
   './',
   './index.html',
