@@ -144,7 +144,8 @@
   const TRIPLES = ['111'];
 
   function levelConfig(lv) {
-    const speed = Math.min(0.30, 0.085 + 0.012 * (lv - 1));   // 每秒落下畫面高度的比例
+    let speed = Math.min(0.30, 0.085 + 0.012 * (lv - 1));     // 每秒落下畫面高度的比例
+    if (lv <= 2) speed *= 1.2;                                 // 單色關卡加快 20%
     const interval = Math.max(0.75, 2.4 - 0.15 * (lv - 1));   // 生成間隔（秒）
     let w;
     if (lv <= 2) w = [1, 0, 0];
