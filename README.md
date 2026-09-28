@@ -35,7 +35,7 @@
 
 1. 到 repo 的 **Settings → Pages**。
 2. Source 選 **Deploy from a branch**，Branch 選 `main`、資料夾選 `/ (root)`，按 Save。
-3. 約一分鐘後可在 `https://cnshow2025.github.io/colorfighting/` 開啟。
+3. 約一分鐘後可在 `https://cnshow2025.github.io/ColorFighting/` 開啟。
 
 ## 安裝到手機
 
