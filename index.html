@@ -380,16 +380,17 @@
     $('pauseBtn').textContent = '⏸';
   }
 
-  function gameOver() {
+  function gameOver(byPlayer = false) {
     state = 'over';
+    $('pauseBtn').textContent = '⏸';
     SFX.over();
     showOverlay(`
-      <h1>濾杯滿了！</h1>
+      <h1>${byPlayer ? '本局結束' : '濾杯滿了！'}</h1>
       <p class="sub">遊戲結束</p>
       <div class="big">${score}</div>
       <p class="sub">第 ${level} 關　消除 ${totalCleared} 滴　最高分 ${best}</p>
       <button class="start" data-act="start" data-lv="${level}">從第 ${level} 關重來</button>
-      <button class="start2" data-act="menu">關卡選單</button>`);
+      <button class="start2" data-act="menu">回到主畫面</button>`);
   }
 
   function pause() {
@@ -399,7 +400,9 @@
       showOverlay(`
         <h1>暫停</h1>
         <p class="sub">第 ${level} 關　分數 ${score}</p>
-        <button class="start" data-act="resume">繼續</button>`);
+        <button class="start" data-act="resume">繼續</button>
+        <button class="start2" data-act="menu">回到主畫面</button>
+        <button class="start2" data-act="end">結束這局</button>`);
     } else if (state === 'paused') {
       resume();
     }
@@ -445,9 +448,17 @@
     $('card').querySelectorAll('[data-act]').forEach(b => b.addEventListener('click', () => {
       const act = b.dataset.act;
       if (act === 'resume') resume();
-      else if (act === 'menu') titleScreen();
+      else if (act === 'menu') goHome();
+      else if (act === 'end') gameOver(true);
       else startGame(parseInt(b.dataset.lv, 10) || 1);
     }));
+  }
+
+  function goHome() {
+    drops = []; effects = []; toasts = []; banner = null;
+    cupCount = 0; cupColor = [60, 70, 90];
+    $('pauseBtn').textContent = '⏸';
+    titleScreen();
   }
   function hideOverlay() { $('overlay').classList.add('hidden'); }
 
